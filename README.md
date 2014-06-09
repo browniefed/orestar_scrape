@@ -5,10 +5,7 @@ How to run
 ```
 npm install
 
-node scraper IDTOSCRAPE
-
-
-example:
-
-node scraper 3
+node scraper
 ```
+
+This will dumb ID.xls files into the scraper folder.
