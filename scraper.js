@@ -1,47 +1,80 @@
 var request = require('request'),
-	cheerio = require('cheerio'),
 	cookieJar = request.jar(),
+	async = require('async'),
 	fs = require('fs'),
-    argv = require('minimist')(process.argv.slice(2)),
-    searchId = argv['_'][0]
+	moment = require('moment'),
+	argv = require('minimist')(process.argv.slice(2)),
+    startDate = moment(argv['_'][0]).format('MM/DD/YYYY'),
+    minimumDate = moment(argv['_'][1]).format('MM/DD/YYYY'),
+    delay = (argv['_'][2] || 10) * 1000;
 
 	request = request.defaults({jar: cookieJar});
 
-var searchUrl = 'https://secure.sos.state.or.us/orestar/GotoSearchByName.do',
-	postUrl = 'https://secure.sos.state.or.us/orestar/CommitteeSearchFirstPage.do',
-	exportUrl = 'https://secure.sos.state.or.us/orestar/XcelSooSearch';
+var searchUrl = 'https://secure.sos.state.or.us/orestar/gotoPublicTransactionSearchResults.do?cneSearchButtonName=newSearch&cneSearchPageIdx=0&sort=desc&by=TRAN_DATE',
+	postUrl = 'https://secure.sos.state.or.us/orestar/gotoPublicTransactionSearchResults.do',
+	exportUrl = 'https://secure.sos.state.or.us/orestar/XcelCNESearch';
 	
 
-	var searchOptions = getSearchOptions(searchId);
-
-	request(searchUrl, function() {
-		request.post(postUrl,{form: searchOptions}, function(err, resp, body) {
-			var stream = fs.createWriteStream('./' + searchId + '.xls');
-			request(exportUrl).pipe(stream);
-		})
-	});
+	var dates = [];
+	var cont = true,
+		dateRange,
+		nextDate = startDate;
 
 
+	while(cont) {
+		dateRange = getDateRange(nextDate, minimumDate);
+		dates.push(dateRange);
 
-function getSearchOptions(searchId) {
-	return {
-		buttonName: '',
-		page:1,
-		committeeName:'',
-		committeeNameMultiboxText:'contains',
-		committeeId:searchId,
-		firstName:'',
-		firstNameMultiboxText:'contains',
-		lastName:'',
-		lastNameMultiboxText:'contains',
-		submit:'Submit',
-		discontinuedSOO:'false',
-		approvedSOO:'true',
-		pendingApprovalSOO:'false',
-		insufficientSOO:'false',
-		resolvedSOO:'false',
-		rejectedSOO:'false'
-	};
+		cont = dateRange.end != minimumDate
 
+		nextDate = moment(dateRange.end).subtract('days', 1);
+
+	}
+
+	function getDateRange(startDate, minimum) {
+		var startFormatted = moment(startDate).format('MM/DD/YYYY');
+		var endDate = moment(startDate).subtract('days', 7).valueOf();
+		var minimumDate = moment(minimum).valueOf();
+		var endDateFormatted;
+
+		if (minimumDate > endDate || minimumDate == endDate) {
+			endDateFormatted = moment(minimumDate).format('MM/DD/YYYY');
+		} else if (endDate > minimumDate) {
+			endDateFormatted = moment(endDate).format('MM/DD/YYYY');
+		}
+
+		return {
+			start: startFormatted,
+			end: endDateFormatted
+		}
+	}
+
+
+
+ async.eachSeries(dates, function(dateRange, completeCb) {
+
+
+ 	var searchOptions = getSearchOptions(dateRange.start, dateRange.end);
+
+	request.get(postUrl + '?' + searchOptions, { 
+		headers: {
+			'Referer': searchUrl,
+			'User-Agent':'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/36.0.1985.125 Safari/537.36'
+		}
+	}, function(err, resp, body) {
+		var stream = fs.createWriteStream('./' + dateRange.start.split('/').join('-') + '_' + dateRange.end.split('/').join('-') + '.xls');
+		request(exportUrl).pipe(stream);
+		setTimeout(function() {
+			completeCb(null, true);
+		}, delay)
+	})
+
+
+ })
+
+
+function getSearchOptions(to, from) {
+
+	return 'cneSearchButtonName=search&cneSearchPageIdx=&cneSearchContributorTypeName=&cneSearchTranTypeName=&cneSearchTranSubTypeName=&cneSearchTranPurposeName=&cneSearchFilerCommitteeId=&cneSearchFilerCommitteeTxt=&cneSearchFilerCommitteeTxtSearchType=C&cneSearchTranStartDate=' + from + '&cneSearchTranEndDate=' + to + '&cneSearchTranFiledStartDate=&cneSearchTranFiledEndDate=&transactionId=&cneSearchTranType=&cneSearchTranAmountFrom=&cneSearchTranAmountTo=&cneSearchContributorTxt=&cneSearchContributorTxtSearchType=C&cneSearchContributorType=&addressLine1=&city=&state=&zip=&zipPlusFour=&occupation=&employer=&employerCity=&employerState=';
 }
 
